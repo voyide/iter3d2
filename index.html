@@ -1,0 +1,1124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>GP Engine: Coupled 3D HD Vector Fields</title>
+<style>
+    :root {
+        --bg-color: #08080a; --panel-bg: #111116; --border-color: #4a3e6d; 
+        --accent-color: #bfa8e6; --text-main: #e2dff0; --text-dim: #7a7299;
+        --danger: #d1495b; --success: #438f6b;
+        --font-mono: "Courier New", Consolas, monospace;
+        --shadow-brutal: 4px 4px 0 rgba(0,0,0,0.9);
+        --shadow-brutal-active: 1px 1px 0 rgba(0,0,0,0.9);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+        background-color: var(--bg-color); color: var(--text-main);
+        font-family: var(--font-mono); line-height: 1.4;
+        display: flex; flex-direction: column; height: 100dvh; overflow: hidden;
+        background-image: linear-gradient(rgba(74, 62, 109, 0.1) 1px, transparent 1px),
+                          linear-gradient(90deg, rgba(74, 62, 109, 0.1) 1px, transparent 1px);
+        background-size: 20px 20px; padding-bottom: env(safe-area-inset-bottom);
+    }
+
+    h2, h3 {
+        text-transform: uppercase; letter-spacing: 2px; color: var(--accent-color);
+        border-bottom: 2px solid var(--border-color); padding-bottom: 5px; margin-bottom: 15px;
+    }
+    h2 { font-size: 1rem; display: flex; justify-content: space-between; align-items: center; }
+    
+    .math-readable {
+        font-family: "Georgia", serif; font-style: italic; letter-spacing: 1px;
+        font-size: 0.85rem; background: #000; padding: 10px; border: 1px solid var(--border-color);
+        color: var(--accent-color); overflow-x: auto; white-space: nowrap;
+        display: flex; flex-direction: column; gap: 8px;
+    }
+    .math-readable sub, .math-readable sup { font-style: normal; font-family: var(--font-mono); }
+
+    #app-container { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+
+    header {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 15px; background: var(--panel-bg); border-bottom: 4px solid var(--border-color);
+        box-shadow: 0 4px 10px rgba(0,0,0,0.6); z-index: 10; flex-wrap: wrap; gap: 10px;
+    }
+
+    .nav-tabs { display: flex; gap: 10px; flex: 1; }
+    .nav-tabs button { padding: 10px 15px; font-size: 0.85rem; box-shadow: var(--shadow-brutal); }
+    .nav-tabs button.active { background: var(--border-color); color: var(--text-main); box-shadow: var(--shadow-brutal-active); transform: translate(3px, 3px); }
+
+    .status-indicator {
+        display: flex; align-items: center; gap: 10px; font-size: 0.85rem; background: #000;
+        padding: 5px 10px; border: 1px solid var(--border-color); box-shadow: inset 2px 2px 5px rgba(0,0,0,0.8);
+    }
+
+    .status-dot { width: 12px; height: 12px; border-radius: 50%; background-color: var(--text-dim); border: 2px solid #000; }
+    .status-dot.active { background-color: var(--success); box-shadow: 0 0 10px var(--success); }
+    .status-dot.stopped { background-color: var(--danger); }
+
+    main { display: flex; flex: 1; overflow: hidden; flex-direction: column; position: relative; }
+    @media (min-width: 768px) { main { flex-direction: row; } }
+
+    #control-panel {
+        flex: 0 0 auto; width: 100%; height: 45%; overflow-y: auto; background: var(--bg-color);
+        border-right: 4px solid var(--border-color); border-bottom: 4px solid var(--border-color);
+        padding: 15px; display: flex; flex-direction: column; gap: 15px; z-index: 5;
+    }
+    @media (min-width: 768px) { #control-panel { width: 380px; height: 100%; max-height: 100%; border-bottom: none; } }
+
+    .input-group { display: flex; flex-direction: column; gap: 5px; }
+    .input-group label { font-size: 0.75rem; color: var(--accent-color); text-transform: uppercase; font-weight: bold; }
+
+    input[type="number"], input[type="text"], textarea, select {
+        background: var(--panel-bg); color: var(--text-main); border: 1px solid var(--border-color);
+        padding: 8px; font-family: var(--font-mono); outline: none; box-shadow: inset 2px 2px 5px rgba(0,0,0,0.8);
+        width: 100%; appearance: none;
+    }
+    select { cursor: pointer; } input:disabled { opacity: 0.4; cursor: not-allowed; }
+    textarea { resize: vertical; min-height: 70px; }
+    input:focus, textarea:focus, select:focus { border-color: var(--accent-color); }
+
+    .btn-group { display: flex; gap: 10px; margin-top: 10px; }
+    button {
+        background: var(--panel-bg); color: var(--accent-color); border: 2px solid var(--border-color);
+        padding: 12px; font-family: var(--font-mono); font-weight: bold; text-transform: uppercase;
+        cursor: pointer; flex: 1; transition: all 0.1s; box-shadow: var(--shadow-brutal);
+    }
+    button:active { transform: translate(3px, 3px); box-shadow: var(--shadow-brutal-active); }
+    button:hover:not(:disabled) { background: var(--border-color); color: var(--bg-color); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
+    #btn-stop { border-color: var(--danger); color: var(--danger); }
+    #btn-stop:hover:not(:disabled) { background: var(--danger); color: var(--text-main); }
+    .btn-small { padding: 6px 10px; font-size: 0.75rem; flex: 0 0 auto; box-shadow: 2px 2px 0 rgba(0,0,0,0.8); }
+    .btn-small:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 rgba(0,0,0,0.8); }
+
+    #terminal-container {
+        flex: 1; display: flex; flex-direction: column; min-height: 150px;
+        border: 1px solid var(--border-color); background: #050505; padding: 10px; overflow-y: auto;
+    }
+    #terminal-output { font-size: 0.7rem; white-space: pre-wrap; color: var(--accent-color); }
+    .log-sys { color: var(--text-dim); } .log-err { color: var(--danger); } .log-win { color: var(--success); }
+
+    .view-section { flex: 1; display: none; flex-direction: column; overflow: hidden; }
+    .view-section.active { display: flex; }
+
+    .gallery-panel {
+        flex: 1; background: transparent; padding: 15px; overflow-y: auto;
+        display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; align-content: start; padding-bottom: 40px; 
+    }
+
+    .gallery-item {
+        background: var(--panel-bg); border: 2px solid var(--border-color); display: flex; flex-direction: column;
+        box-shadow: 6px 6px 0 rgba(0,0,0,0.8); position: relative; transition: transform 0.2s;
+    }
+    .gallery-item:hover { transform: translateY(-2px); }
+
+    .gallery-item canvas {
+        width: 100%; height: auto; display: block; border-bottom: 2px solid var(--border-color);
+        background: #000; image-rendering: pixelated; 
+        cursor: pointer; aspect-ratio: 1/1;
+    }
+
+    .gallery-info { padding: 10px; font-size: 0.8rem; display: flex; flex-direction: column; gap: 8px; }
+    .gallery-actions { display: flex; gap: 5px; flex-wrap: wrap; }
+
+    #progress-container { width: 100%; height: 6px; background: var(--panel-bg); border-top: 1px solid var(--border-color); flex-shrink: 0; }
+    #progress-bar { height: 100%; width: 0%; background: var(--accent-color); transition: width 0.1s linear; }
+
+    .modal-overlay {
+        position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.85);
+        display: none; justify-content: center; align-items: center; z-index: 100; backdrop-filter: blur(4px);
+    }
+    .modal-overlay.active { display: flex; }
+    
+    .modal-content {
+        background: var(--panel-bg); border: 4px solid var(--border-color); padding: 20px; width: 90%;
+        max-width: 600px; max-height: 90dvh; overflow-y: auto; box-shadow: 10px 10px 0 #000; display: flex; flex-direction: column; gap: 15px;
+    }
+    
+    .share-id-box {
+        background: #000; padding: 10px; border: 1px solid var(--text-dim); word-wrap: break-word; font-size: 0.75rem; color: var(--text-main); cursor: pointer; user-select: all;
+    }
+
+    ::-webkit-scrollbar { width: 10px; }
+    ::-webkit-scrollbar-track { background: var(--bg-color); border-left: 1px solid var(--panel-bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border-color); }
+    ::-webkit-scrollbar-thumb:hover { background: var(--accent-color); }
+
+    .empty-state { grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--text-dim); font-size: 1.2rem; border: 2px dashed var(--border-color); }
+</style>
+</head>
+<body>
+
+<div id="app-container">
+    <header>
+        <div class="nav-tabs">
+            <button id="tab-live" class="active">Vector Field Evolution</button>
+            <button id="tab-archive">Volumetric Archives</button>
+        </div>
+        <div class="status-indicator">
+            <span id="status-text">IDLE</span>
+            <div id="status-dot" class="status-dot"></div>
+        </div>
+    </header>
+
+    <div id="progress-container"><div id="progress-bar"></div></div>
+
+    <main>
+        <aside id="control-panel">
+            <div id="panel-coords" class="panel-section">
+                <h2>Spatial Mapping</h2>
+                <div class="input-group">
+                    <label>Evaluation Target</label>
+                    <select id="cfg-coord-mode">
+                        <option value="center">Center at Origin (0,0)</option>
+                        <option value="customCenter">Custom Center Point</option>
+                    </select>
+                </div>
+                <div class="input-group" style="flex-direction: row; gap: 10px; margin-top: 5px;">
+                    <div style="flex:1"><label>X Offset</label><input type="number" id="cfg-coord-x" value="0" disabled></div>
+                    <div style="flex:1"><label>Y Offset</label><input type="number" id="cfg-coord-y" value="0" disabled></div>
+                </div>
+            </div>
+
+            <div id="panel-live" class="panel-section" style="margin-top: 20px; border-top: 2px solid var(--border-color); padding-top: 15px;">
+                <h2>Coupled 3D Evolution</h2>
+                <div class="input-group" style="flex-direction: row; gap: 10px;">
+                    <div style="flex:1"><label title="Compute Grid Size">Base Res</label><input type="number" id="cfg-grid" value="128" min="32" max="512"></div>
+                    <div style="flex:1"><label title="Nearest-Neighbor Pixel Upscale">Upscale</label>
+                        <select id="cfg-scale">
+                            <option value="1">1x</option>
+                            <option value="2">2x</option>
+                            <option value="4" selected>4x (HD)</option>
+                            <option value="8">8x (4K)</option>
+                        </select>
+                    </div>
+                    <div style="flex:1"><label title="Z-Axis Frames">Slices</label><input type="number" id="cfg-slices" value="32" min="4" max="256"></div>
+                </div>
+                <div class="input-group" style="flex-direction: row; gap: 10px;">
+                    <div style="flex:1"><label>Population</label><input type="number" id="cfg-pop" value="30" min="10" max="500"></div>
+                    <div style="flex:1"><label>Generations</label><input type="number" id="cfg-gen" value="15" min="1" max="200"></div>
+                </div>
+                <div class="input-group">
+                    <label>Seed (Optional)</label><input type="text" id="cfg-seed" placeholder="Leave blank for random">
+                </div>
+                <div class="input-group">
+                    <label>Final Renders Target</label><input type="number" id="cfg-top" value="4" min="1" max="20">
+                </div>
+                <div class="btn-group">
+                    <button id="btn-start">Execute</button>
+                    <button id="btn-stop" disabled>Halt</button>
+                </div>
+            </div>
+
+            <div id="panel-reconstruct" class="panel-section" style="margin-top: 20px; border-top: 2px solid var(--border-color); padding-top: 15px;">
+                <h2>Custom Synthesis <button id="btn-syntax-help" class="btn-small">Syntax Info</button></h2>
+                <div class="input-group">
+                    <label>Rule Share ID (Base64 Array)</label><input type="text" id="cfg-share-id" placeholder="Paste Base64 ID here...">
+                </div>
+                <div class="input-group" style="margin-top: 10px;">
+                    <label>OR Raw Mathematics (X;Y;Z)</label><textarea id="cfg-raw-rule" placeholder="e.g., add(x, cx); sub(y, cy); smod(z, cz)"></textarea>
+                </div>
+                <div class="input-group" style="flex-direction: row; gap: 10px; margin-top: 10px;">
+                    <div style="flex:1"><label>Base Res</label><input type="number" id="cfg-custom-grid" value="256" min="64" max="1024"></div>
+                    <div style="flex:1"><label>Upscale</label>
+                        <select id="cfg-custom-scale">
+                            <option value="1">1x</option>
+                            <option value="2">2x</option>
+                            <option value="4" selected>4x</option>
+                            <option value="8">8x</option>
+                        </select>
+                    </div>
+                    <div style="flex:1"><label>Slices</label><input type="number" id="cfg-custom-slices" value="64" min="8" max="512"></div>
+                </div>
+                <div class="btn-group">
+                    <button id="btn-render-custom">Synthesize HD Volume</button>
+                </div>
+            </div>
+
+            <div id="terminal-container" style="margin-top: 20px;">
+                <h2>Telemetry</h2><div id="terminal-output"></div>
+            </div>
+        </aside>
+
+        <section id="view-live" class="view-section active">
+            <div id="gallery-live" class="gallery-panel"><div class="empty-state">Awaiting execution command to populate live feed.</div></div>
+        </section>
+
+        <section id="view-archive" class="view-section">
+            <div id="gallery-archive" class="gallery-panel"><div class="empty-state">No volumetric records found in the Vault.</div></div>
+        </section>
+    </main>
+</div>
+
+<div id="modal-syntax" class="modal-overlay">
+    <div class="modal-content">
+        <h2>3D Vector Field Syntax Guide</h2>
+        <p style="font-size:0.85rem; color:var(--text-main); line-height: 1.5;">
+            The engine now co-iterates 3 discrete mathematical trees to build 3D attractors. 
+            <br><br>
+            <strong>State Variables:</strong> `x`, `y`, `z` (Current Iteration Values)<br>
+            <strong>Origin Variables:</strong> `cx`, `cy`, `cz` (Initial Voxel Coordinate Constraints)<br><br>
+            A full sequence requires 3 ASTs separated by semicolons (;).
+        </p>
+        <label style="font-size:0.7rem; color:var(--accent-color); margin-top: 5px;">COPIABLE PROMPT TEMPLATE</label>
+        <div id="copy-syntax-box" class="share-id-box" style="white-space:pre-wrap;">You are a mathematical formula generator for a discrete 3D vector-field escape-time fractal engine. Generate THREE valid AST strings separated by semicolons (X; Y; Z) using ONLY the following tokens. Do not include markdown formatting.
+Variables: x, y, z (Current State), cx, cy, cz (Constants)
+Constants: Integers (e.g., 42, -5)
+Unary Ops: abs(a), sqr(a), cube(a), tri(a), isqrt(a), neg(a), is_even(a)
+Binary Ops: add(a,b), sub(a,b), mul(a,b), min(a,b), max(a,b), xor(a,b), and(a,b), or(a,b), sdiv(a,b), smod(a,b), shl(a,b), shr(a,b), eq(a,b), lt(a,b), le(a,b), gt(a,b), ge(a,b)
+Ternary Op: ifelse(cond, then, else)
+Example: smod(add(x, cy), 256); xor(y, cx); add(mul(z, 2), cz)</div>
+        <div class="btn-group" style="margin-top: 15px;">
+            <button id="btn-copy-syntax" class="btn-small">Copy Prompt</button>
+            <button id="btn-close-syntax" class="btn-small" style="border-color: var(--text-dim); color: var(--text-dim);">Close</button>
+        </div>
+    </div>
+</div>
+
+<div id="modal-save" class="modal-overlay">
+    <div class="modal-content">
+        <h2 id="modal-save-title">Commit Volume to Vault</h2>
+        <div class="input-group">
+            <label>Designation (Name)</label><input type="text" id="input-save-name" placeholder="Enter rule designation...">
+        </div>
+        <div class="btn-group">
+            <button id="btn-confirm-save">Commit</button>
+            <button id="btn-cancel-save" style="border-color: var(--text-dim); color: var(--text-dim);">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<div id="modal-details" class="modal-overlay">
+    <div class="modal-content">
+        <h2 id="detail-title">Rule Designation</h2>
+        <div style="display:flex; gap:15px; margin-bottom: 10px;">
+            <div style="flex:1;">
+                <label style="font-size:0.7rem; color:var(--accent-color);">COUPLED EQUATIONS (X, Y, Z)</label>
+                <div id="detail-math" class="math-readable"></div>
+            </div>
+        </div>
+        <div>
+            <label style="font-size:0.7rem; color:var(--accent-color);">SHARE ID (CLICK TO COPY)</label>
+            <div id="detail-share-id" class="share-id-box" title="Click to copy ID"></div>
+        </div>
+        <div class="btn-group" style="margin-top: auto;">
+            <button id="btn-detail-render" class="btn-small">Load to Synthesizer</button>
+            <button id="btn-detail-close" class="btn-small" style="border-color: var(--text-dim); color: var(--text-dim);">Close</button>
+        </div>
+    </div>
+</div>
+
+<script>
+/**
+ * INDEXED DB MANAGER 
+ */
+class DBManager {
+    constructor(dbName = "GPEngineCoupledHD", version = 1) {
+        this.dbName = dbName; this.version = version; this.db = null;
+    }
+    init() {
+        return new Promise((resolve, reject) => {
+            const req = indexedDB.open(this.dbName, this.version);
+            req.onupgradeneeded = (e) => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains("saved_rules")) db.createObjectStore("saved_rules", { keyPath: "id" });
+            };
+            req.onsuccess = (e) => { this.db = e.target.result; resolve(); };
+            req.onerror = (e) => reject(e.target.error);
+        });
+    }
+    async saveRule(record) {
+        return new Promise((resolve, reject) => {
+            const tx = this.db.transaction("saved_rules", "readwrite");
+            if(!record.timestamp) record.timestamp = Date.now();
+            tx.objectStore("saved_rules").put(record);
+            tx.oncomplete = () => resolve(); tx.onerror = (e) => reject(e.target.error);
+        });
+    }
+    async getRule(id) {
+        return new Promise((resolve, reject) => {
+            const req = this.db.transaction("saved_rules", "readonly").objectStore("saved_rules").get(id);
+            req.onsuccess = () => resolve(req.result); req.onerror = (e) => reject(e.target.error);
+        });
+    }
+    async getAllRules() {
+        return new Promise((resolve, reject) => {
+            const req = this.db.transaction("saved_rules", "readonly").objectStore("saved_rules").getAll();
+            req.onsuccess = () => resolve(req.result.sort((a,b) => b.timestamp - a.timestamp));
+            req.onerror = (e) => reject(e.target.error);
+        });
+    }
+    async deleteRule(id) {
+        return new Promise((resolve, reject) => {
+            const tx = this.db.transaction("saved_rules", "readwrite");
+            tx.objectStore("saved_rules").delete(id);
+            tx.oncomplete = () => resolve(); tx.onerror = (e) => reject(e.target.error);
+        });
+    }
+}
+
+/**
+ * MAIN APP CONTROLLER
+ */
+class MainApp {
+    constructor() {
+        this.worker = null; this.isRunning = false; this.db = new DBManager();
+        this.liveResultsMap = new Map(); this.pendingSaveData = null; this.isRenameMode = false;
+        
+        this.ui = {
+            btnStart: document.getElementById('btn-start'), btnStop: document.getElementById('btn-stop'),
+            btnRenderCustom: document.getElementById('btn-render-custom'), btnSyntaxHelp: document.getElementById('btn-syntax-help'),
+            terminal: document.getElementById('terminal-output'), termContainer: document.getElementById('terminal-container'),
+            galleryLive: document.getElementById('gallery-live'), galleryArchive: document.getElementById('gallery-archive'),
+            statusText: document.getElementById('status-text'), statusDot: document.getElementById('status-dot'), progressBar: document.getElementById('progress-bar'),
+            cfgCoordMode: document.getElementById('cfg-coord-mode'), cfgCoordX: document.getElementById('cfg-coord-x'), cfgCoordY: document.getElementById('cfg-coord-y'),
+            cfgGrid: document.getElementById('cfg-grid'), cfgScale: document.getElementById('cfg-scale'), cfgSlices: document.getElementById('cfg-slices'), 
+            cfgPop: document.getElementById('cfg-pop'), cfgGen: document.getElementById('cfg-gen'), cfgSeed: document.getElementById('cfg-seed'), cfgTop: document.getElementById('cfg-top'),
+            cfgShareId: document.getElementById('cfg-share-id'), cfgRawRule: document.getElementById('cfg-raw-rule'),
+            cfgCustomGrid: document.getElementById('cfg-custom-grid'), cfgCustomScale: document.getElementById('cfg-custom-scale'), cfgCustomSlices: document.getElementById('cfg-custom-slices'),
+            tabLive: document.getElementById('tab-live'), tabArchive: document.getElementById('tab-archive'),
+            viewLive: document.getElementById('view-live'), viewArchive: document.getElementById('view-archive'),
+            modalSyntax: document.getElementById('modal-syntax'), btnCopySyntax: document.getElementById('btn-copy-syntax'),
+            btnCloseSyntax: document.getElementById('btn-close-syntax'), copySyntaxBox: document.getElementById('copy-syntax-box'),
+            modalSave: document.getElementById('modal-save'), modalSaveTitle: document.getElementById('modal-save-title'),
+            inputSaveName: document.getElementById('input-save-name'), btnConfirmSave: document.getElementById('btn-confirm-save'),
+            btnCancelSave: document.getElementById('btn-cancel-save'), modalDetails: document.getElementById('modal-details'),
+            detailTitle: document.getElementById('detail-title'), detailMath: document.getElementById('detail-math'),
+            detailShareId: document.getElementById('detail-share-id'), btnDetailRender: document.getElementById('btn-detail-render'),
+            btnDetailClose: document.getElementById('btn-detail-close')
+        };
+        this.init();
+    }
+
+    async init() {
+        await this.db.init(); this.bindEvents();
+        this.log("Coupled 3D JIT System Initialized. Awaiting constraints.", "log-sys");
+        this.loadArchives();
+    }
+
+    bindEvents() {
+        this.ui.cfgCoordMode.addEventListener('change', (e) => {
+            const isCustom = e.target.value.startsWith('custom');
+            this.ui.cfgCoordX.disabled = !isCustom; this.ui.cfgCoordY.disabled = !isCustom;
+        });
+        this.ui.btnStart.addEventListener('click', () => this.startExecution());
+        this.ui.btnStop.addEventListener('click', () => this.stopExecution());
+        this.ui.btnRenderCustom.addEventListener('click', () => this.startCustomRender());
+        this.ui.tabLive.addEventListener('click', () => this.switchTab('live'));
+        this.ui.tabArchive.addEventListener('click', () => { this.switchTab('archive'); this.loadArchives(); });
+        this.ui.btnSyntaxHelp.addEventListener('click', () => this.ui.modalSyntax.classList.add('active'));
+        this.ui.btnCloseSyntax.addEventListener('click', () => this.ui.modalSyntax.classList.remove('active'));
+        this.ui.btnCopySyntax.addEventListener('click', () => {
+            navigator.clipboard.writeText(this.ui.copySyntaxBox.innerText).then(() => {
+                const orig = this.ui.btnCopySyntax.innerText; this.ui.btnCopySyntax.innerText = "COPIED!";
+                setTimeout(() => this.ui.btnCopySyntax.innerText = orig, 1500);
+            });
+        });
+        this.ui.cfgShareId.addEventListener('input', () => { if(this.ui.cfgShareId.value) this.ui.cfgRawRule.value = ''; });
+        this.ui.cfgRawRule.addEventListener('input', () => { if(this.ui.cfgRawRule.value) this.ui.cfgShareId.value = ''; });
+        this.ui.btnCancelSave.addEventListener('click', () => { this.ui.modalSave.classList.remove('active'); this.pendingSaveData = null; this.isRenameMode = false; });
+        this.ui.btnConfirmSave.addEventListener('click', () => this.executeSaveOrRename());
+        this.ui.btnDetailClose.addEventListener('click', () => this.ui.modalDetails.classList.remove('active'));
+        this.ui.detailShareId.addEventListener('click', (e) => {
+            navigator.clipboard.writeText(e.target.innerText).then(() => {
+                const orig = e.target.innerText; e.target.innerText = "COPIED TO CLIPBOARD!";
+                setTimeout(() => e.target.innerText = orig, 1500);
+            });
+        });
+        this.ui.btnDetailRender.addEventListener('click', () => {
+            this.ui.modalDetails.classList.remove('active');
+            this.ui.cfgShareId.value = this.ui.detailShareId.innerText; this.ui.cfgRawRule.value = '';
+            this.ui.cfgCustomGrid.focus(); document.getElementById('control-panel').scrollIntoView({behavior: "smooth"});
+        });
+    }
+
+    switchTab(tab) {
+        const isLive = tab === 'live';
+        this.ui.tabLive.classList.toggle('active', isLive); this.ui.tabArchive.classList.toggle('active', !isLive);
+        this.ui.viewLive.classList.toggle('active', isLive); this.ui.viewArchive.classList.toggle('active', !isLive);
+    }
+
+    log(msg, className = "") {
+        const div = document.createElement('div');
+        div.textContent = `[${new Date().toISOString().split('T')[1].slice(0,-1)}] ${msg}`;
+        if (className) div.className = className;
+        this.ui.terminal.appendChild(div);
+        if (this.ui.terminal.childNodes.length > 300) this.ui.terminal.removeChild(this.ui.terminal.firstChild);
+        this.ui.termContainer.scrollTop = this.ui.termContainer.scrollHeight;
+    }
+
+    setStatus(running) {
+        this.isRunning = running; this.ui.btnStart.disabled = running; this.ui.btnRenderCustom.disabled = running;
+        this.ui.btnStop.disabled = !running; this.ui.statusText.textContent = running ? "COMPUTING JIT VECTOR FIELD" : "HALTED";
+        this.ui.statusDot.className = `status-dot ${running ? 'active' : 'stopped'}`;
+        if (!running) this.ui.progressBar.style.width = '0%';
+    }
+
+    createWorker() {
+        if (this.worker) this.worker.terminate();
+        const workerScript = `(${WorkerLogic.toString()})()`;
+        const blob = new Blob([workerScript], { type: 'application/javascript' });
+        this.worker = new Worker(URL.createObjectURL(blob));
+        this.worker.onmessage = (e) => this.handleWorkerMessage(e.data);
+        this.worker.onerror = (e) => { this.log(`Worker Fault: ${e.message}`, "log-err"); this.stopExecution(); };
+    }
+
+    startExecution() {
+        if (this.isRunning) return;
+        this.setStatus(true); this.switchTab('live'); this.ui.galleryLive.innerHTML = ''; this.liveResultsMap.clear();
+        
+        const scale = parseInt(this.ui.cfgScale.value) || 4;
+        const grid = parseInt(this.ui.cfgGrid.value) || 128;
+
+        this.log(`Initiating Coupled GP. Compute: ${grid}px | HD Output: ${grid*scale}px...`, "log-sys");
+        const config = {
+            gridSize: grid, renderScale: scale, slices: parseInt(this.ui.cfgSlices.value) || 32,
+            popSize: parseInt(this.ui.cfgPop.value) || 30, generations: parseInt(this.ui.cfgGen.value) || 15,
+            seedStr: this.ui.cfgSeed.value.trim() || Math.random().toString(36).substring(2), topN: parseInt(this.ui.cfgTop.value) || 4,
+            coordMode: this.ui.cfgCoordMode.value, coordX: parseInt(this.ui.cfgCoordX.value) || 0, coordY: parseInt(this.ui.cfgCoordY.value) || 0
+        };
+        this.createWorker(); 
+        this.worker.postMessage({ cmd: 'start_evolution', config });
+    }
+
+    startCustomRender() {
+        if (this.isRunning) return;
+        const customGrid = parseInt(this.ui.cfgCustomGrid.value) || 256;
+        const customScale = parseInt(this.ui.cfgCustomScale.value) || 4;
+        const customSlices = parseInt(this.ui.cfgCustomSlices.value) || 64;
+        let shareIdBase64 = this.ui.cfgShareId.value.trim(); const rawRule = this.ui.cfgRawRule.value.trim();
+        
+        if (rawRule) {
+            try { shareIdBase64 = btoa(rawRule.replace(/\s+/g, '')); }
+            catch (e) { this.log("Invalid characters in Raw Rule string.", "log-err"); return; }
+        }
+        if(!shareIdBase64) { this.log("Provide a Share ID or a Raw Rule.", "log-err"); return; }
+        try { atob(shareIdBase64); } catch(e) { this.log("Invalid Share ID encoding.", "log-err"); return; }
+        
+        this.setStatus(true); this.switchTab('live');
+        this.log(`Synthesizing custom volume (Compute: ${customGrid}px, Target: ${customGrid*customScale}px)...`, "log-sys");
+        this.createWorker();
+        this.worker.postMessage({
+            cmd: 'render_custom',
+            payload: { shareIdBase64, gridSize: customGrid, renderScale: customScale, slices: customSlices, coordMode: this.ui.cfgCoordMode.value, coordX: parseInt(this.ui.cfgCoordX.value)||0, coordY: parseInt(this.ui.cfgCoordY.value)||0 }
+        });
+    }
+
+    stopExecution() {
+        if (!this.isRunning || !this.worker) return;
+        this.worker.terminate(); this.worker = null; this.log("Execution halted by operator.", "log-err"); this.setStatus(false);
+    }
+
+    handleWorkerMessage(data) {
+        switch (data.type) {
+            case 'log': this.log(data.msg, data.level === 'err' ? 'log-err' : (data.level === 'win' ? 'log-win' : ''));
+                if (data.level === 'err') this.setStatus(false); break;
+            case 'progress': this.ui.progressBar.style.width = `${Math.min(100, Math.max(0, data.pct * 100))}%`; break;
+            case 'result': this.appendLiveResult(data); break;
+            case 'custom_result': this.appendLiveResult(data, true); this.log("Custom Vector Field synthesized.", "log-win"); this.setStatus(false); break;
+            case 'done': this.log(`Process complete. Rendered ${data.count} HD models.`, "log-win"); this.setStatus(false); break;
+        }
+    }
+
+    appendLiveResult(data, isCustom = false) {
+        const { id, shareId, readableMath, fitness, w, h, renderScale, frames } = data;
+        const itemData = { id, shareId, readableMath, fitness, frames, w, h, renderScale, isCustom };
+        this.liveResultsMap.set(id, itemData);
+        this.renderDOMItem(itemData, this.ui.galleryLive, false);
+        const empty = this.ui.galleryLive.querySelector('.empty-state'); if(empty) empty.remove();
+    }
+
+    async loadArchives() {
+        this.ui.galleryArchive.innerHTML = '';
+        try {
+            const rules = await this.db.getAllRules();
+            if(rules.length === 0) { this.ui.galleryArchive.innerHTML = '<div class="empty-state">No volumetric records found in the Vault.</div>'; return; }
+            rules.forEach(rule => this.renderDOMItem(rule, this.ui.galleryArchive, true));
+        } catch (e) { this.log("Failed to access Vault records.", "log-err"); }
+    }
+
+    async exportWebM(canvas, imageDatas, baseW, baseH, outW, outH, fileName) {
+        this.log(`Compiling HD ${outW}x${outH} WEBM for ${fileName}...`, "log-sys");
+        
+        const hiddenCanvas = document.createElement('canvas');
+        hiddenCanvas.width = outW; hiddenCanvas.height = outH;
+        const hCtx = hiddenCanvas.getContext('2d');
+        hCtx.imageSmoothingEnabled = false; 
+
+        const offCanvas = document.createElement('canvas');
+        offCanvas.width = baseW; offCanvas.height = baseH;
+        const offCtx = offCanvas.getContext('2d');
+
+        const stream = hiddenCanvas.captureStream(30);
+        const recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
+        const chunks = [];
+        
+        recorder.ondataavailable = e => { if(e.data.size > 0) chunks.push(e.data); };
+        recorder.onstop = () => {
+            const blob = new Blob(chunks, { type: 'video/webm' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = `${fileName}.webm`; a.click();
+            URL.revokeObjectURL(url);
+            this.log(`WEBM Export complete: ${fileName}`, "log-win");
+        };
+
+        recorder.start();
+        let frameIdx = 0;
+        
+        const drawNext = () => {
+            if(frameIdx >= imageDatas.length) {
+                recorder.stop(); return;
+            }
+            offCtx.putImageData(imageDatas[frameIdx], 0, 0);
+            hCtx.clearRect(0, 0, outW, outH);
+            hCtx.drawImage(offCanvas, 0, 0, baseW, baseH, 0, 0, outW, outH);
+            
+            frameIdx++;
+            setTimeout(drawNext, 1000/15); 
+        };
+        drawNext();
+    }
+
+    renderDOMItem(data, container, isArchived) {
+        const { id, shareId, readableMath, frames, w, h, name } = data;
+        const rScale = data.renderScale || 1;
+        const outW = w * rScale;
+        const outH = h * rScale;
+
+        const item = document.createElement('div'); item.className = 'gallery-item';
+
+        const canvas = document.createElement('canvas');
+        canvas.width = outW; canvas.height = outH;
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = false; 
+
+        const offCanvas = document.createElement('canvas');
+        offCanvas.width = w; offCanvas.height = h;
+        const offCtx = offCanvas.getContext('2d');
+        
+        const imageDatas = frames.map(buf => new ImageData(new Uint8ClampedArray(buf), w, h));
+        
+        let currentFrame = 0;
+        let animationInterval = null;
+
+        const playSequence = () => {
+            if (!document.body.contains(canvas)) { clearInterval(animationInterval); return; }
+            offCtx.putImageData(imageDatas[currentFrame], 0, 0);
+            ctx.clearRect(0, 0, outW, outH);
+            ctx.drawImage(offCanvas, 0, 0, w, h, 0, 0, outW, outH);
+            currentFrame = (currentFrame + 1) % imageDatas.length;
+        };
+        animationInterval = setInterval(playSequence, 66);
+
+        canvas.onclick = () => this.showDetails(data, isArchived);
+
+        const info = document.createElement('div'); info.className = 'gallery-info';
+        const title = document.createElement('strong'); title.id = `title-${id}`;
+        title.textContent = isArchived ? name : (data.isCustom ? `HD Synthesis (${outW}px)` : `Gen: ${id} (${outW}px)`);
+        
+        const actions = document.createElement('div'); actions.className = 'gallery-actions';
+        
+        const btnExport = document.createElement('button');
+        btnExport.className = 'btn-small'; btnExport.textContent = 'WEBM'; btnExport.title = `Export ${outW}x${outH} Video`;
+        btnExport.onclick = () => this.exportWebM(canvas, imageDatas, w, h, outW, outH, `GP3D_${id}_HD`);
+        actions.appendChild(btnExport);
+
+        if (!isArchived) {
+            const btnVault = document.createElement('button'); btnVault.className = 'btn-small';
+            btnVault.textContent = 'VAULT'; btnVault.title = 'Save to Vault';
+            btnVault.onclick = () => this.promptSave(id); actions.appendChild(btnVault);
+        } else {
+            const btnRename = document.createElement('button'); btnRename.className = 'btn-small';
+            btnRename.textContent = 'RENAME'; btnRename.title = 'Rename Rule';
+            btnRename.onclick = () => this.promptRename(id, name); actions.appendChild(btnRename);
+
+            const btnDel = document.createElement('button'); btnDel.className = 'btn-small';
+            btnDel.style.borderColor = 'var(--danger)'; btnDel.style.color = 'var(--danger)';
+            btnDel.textContent = 'DEL'; btnDel.title = 'Delete from Vault';
+            btnDel.onclick = async () => {
+                if(confirm(`Delete Volume ${name}?`)) {
+                    await this.db.deleteRule(id); item.remove();
+                    if(this.ui.galleryArchive.childNodes.length === 0) this.ui.galleryArchive.innerHTML = '<div class="empty-state">No volumetric records found in the Vault.</div>';
+                }
+            };
+            actions.appendChild(btnDel);
+        }
+
+        const btnMath = document.createElement('button'); btnMath.className = 'btn-small';
+        btnMath.textContent = 'MATH'; btnMath.title = 'View Mathematical Definition';
+        btnMath.onclick = () => this.showDetails(data, isArchived); actions.appendChild(btnMath);
+
+        info.appendChild(title); info.appendChild(actions); item.appendChild(canvas); item.appendChild(info);
+        container.prepend(item);
+    }
+
+    promptSave(id) {
+        const data = this.liveResultsMap.get(id); if(!data) return;
+        this.pendingSaveData = data; this.isRenameMode = false;
+        this.ui.modalSaveTitle.textContent = "Commit HD Volume to Vault"; this.ui.btnConfirmSave.textContent = "Commit";
+        this.ui.inputSaveName.value = `VF_${id.substring(0,6)}`; this.ui.modalSave.classList.add('active'); this.ui.inputSaveName.focus();
+    }
+
+    async promptRename(id, currentName) {
+        try {
+            const record = await this.db.getRule(id); if(!record) return;
+            this.pendingSaveData = record; this.isRenameMode = true;
+            this.ui.modalSaveTitle.textContent = "Rename Archive"; this.ui.btnConfirmSave.textContent = "Update";
+            this.ui.inputSaveName.value = currentName; this.ui.modalSave.classList.add('active'); this.ui.inputSaveName.focus();
+        } catch(e) { this.log("Failed to fetch rule for renaming.", "log-err"); }
+    }
+
+    async executeSaveOrRename() {
+        if(!this.pendingSaveData) return;
+        const name = this.ui.inputSaveName.value.trim() || `Unnamed_${Date.now()}`;
+        let record = this.isRenameMode ? this.pendingSaveData : {
+            id: this.pendingSaveData.id, name: name, shareId: this.pendingSaveData.shareId,
+            readableMath: this.pendingSaveData.readableMath, fitness: this.pendingSaveData.fitness,
+            frames: this.pendingSaveData.frames, w: this.pendingSaveData.w, h: this.pendingSaveData.h,
+            renderScale: this.pendingSaveData.renderScale
+        };
+        if(this.isRenameMode) record.name = name;
+        try {
+            await this.db.saveRule(record);
+            if(this.isRenameMode) {
+                this.log(`Renamed archive to [${name}].`, "log-win");
+                const titleEl = document.getElementById(`title-${record.id}`); if(titleEl) titleEl.textContent = name;
+            } else this.log(`Committed [${name}] to Vault.`, "log-win");
+        } catch(e) { this.log(`Vault operation failed: ${e.message}`, "log-err"); }
+        this.ui.modalSave.classList.remove('active'); this.pendingSaveData = null; this.isRenameMode = false;
+    }
+
+    showDetails(data, isArchived) {
+        const outW = data.w * (data.renderScale || 1);
+        this.ui.detailTitle.textContent = isArchived ? data.name : (data.isCustom ? `HD Custom Synthesis (${outW}px)` : `Gen ID: ${data.id}`);
+        this.ui.detailMath.innerHTML = data.readableMath; 
+        this.ui.detailShareId.innerText = data.shareId;
+        this.ui.modalDetails.classList.add('active');
+    }
+}
+
+/**
+ * 3D VECTOR FIELD WORKER LOGIC
+ */
+function WorkerLogic() {
+    const MATH_SYMBOLS = {
+        'add': '+', 'sub': '-', 'mul': '×', 'min': 'min', 'max': 'max',
+        'xor': '⊕', 'and': '∧', 'or': '∨', 'sdiv': '/', 'smod': 'mod',
+        'shl': '≪', 'shr': '≫', 'eq': '=', 'lt': '&lt;', 'le': '≤', 'gt': '&gt;', 'ge': '≥'
+    };
+
+    const CFG = {
+        MAX_ITER: 60, ESC_RAD_SQ: 1e12, MAX_DEPTH: 8, MAX_NODES: 60,
+        CROSSOVER_RATE: 0.70, SUBTREE_MUT_RATE: 0.25, POINT_MUT_RATE: 0.30, CONST_MUT_RATE: 0.35,
+        FITNESS_GRID: 24, ELITE_FRAC: 0.15, TOURNAMENT_K: 4, STD_MIN: 1.0, ESC_MIN: 0.02, ESC_MAX: 0.98
+    };
+
+    let isStopped = false;
+    function sendLog(msg, level = 'sys') { postMessage({ type: 'log', msg, level }); }
+    function sendProgress(pct) { postMessage({ type: 'progress', pct }); }
+
+    class PRNG {
+        constructor(seedStr) {
+            let h = 2166136261 >>> 0; for(let i=0; i<seedStr.length; i++) h = Math.imul(h ^ seedStr.charCodeAt(i), 16777619) >>> 0;
+            this.a = h >>> 0; this.b = (h << 15) | (h >>> 17); this.c = (h << 21) | (h >>> 11); this.d = (h << 5) | (h >>> 27);
+            for (let i=0; i<15; i++) this.next();
+        }
+        next() {
+            this.a >>>= 0; this.b >>>= 0; this.c >>>= 0; this.d >>>= 0; 
+            let t = (this.a + this.b | 0) + this.d | 0; this.d = this.d + 1 | 0;
+            this.a = this.b ^ (this.b >>> 9); this.b = this.c + (this.c << 3) | 0;
+            this.c = (this.c << 21) | (this.c >>> 11); this.c = this.c + t | 0;
+            return (t >>> 0) / 4294967296.0;
+        }
+        randint(min, max) { return Math.floor(this.next() * (max - min + 1)) + min; }
+        choice(arr) { return arr[this.randint(0, arr.length - 1)]; }
+        gauss(mu, sigma) {
+            let u1 = this.next(), u2 = this.next(); if (u1 === 0) u1 = 1e-7;
+            let z0 = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
+            return z0 * sigma + mu;
+        }
+    }
+
+    function hashAST(str) {
+        let h = 2166136261 >>> 0; for(let i=0; i<str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 16777619) >>> 0;
+        return (h >>> 0).toString(16).padStart(8, '0');
+    }
+
+    class ASTNode {
+        compile(env) { throw new Error("Base"); } toReadable() { throw new Error("Base"); } toSerialize() { throw new Error("Base"); }
+        clone() { throw new Error("Base"); } children() { return []; } setChild(idx, node) {}
+        size() { return 1 + this.children().reduce((s, c) => s + c.size(), 0); }
+        depth() { const ch = this.children(); return ch.length ? 1 + Math.max(...ch.map(c => c.depth())) : 1; }
+        *iterPaths(prefix = []) { yield [prefix, this]; let ch = this.children(); for(let i=0; i<ch.length; i++) yield* ch[i].iterPaths([...prefix, i]); }
+        getAt(path) { let n = this; for (let idx of path) n = n.children()[idx]; return n; }
+        replaceAt(path, new_node) {
+            if (path.length === 0) return new_node.clone();
+            let root = this.clone(), parent = root.getAt(path.slice(0, -1));
+            parent.setChild(path[path.length - 1], new_node.clone()); return root;
+        }
+    }
+
+    class Const extends ASTNode {
+        constructor(v) { super(); this.v = v | 0; } compile(env) { return `(${this.v}|0)`; }
+        toReadable() { return `<span style="color:#bfa8e6;">${this.v}</span>`; } toSerialize() { return this.v.toString(); } clone() { return new Const(this.v); }
+    }
+
+    class Var extends ASTNode {
+        constructor(name) { super(); this.name = name; } compile(env) { return `(${env[this.name]}|0)`; }
+        toReadable() { return this.name.toUpperCase(); }
+        toSerialize() { return this.name; } clone() { return new Var(this.name); }
+    }
+
+    class UnOp extends ASTNode {
+        constructor(op, a) { super(); this.op = op; this.a = a; }
+        compile(env) {
+            let aa = this.a.compile(env);
+            switch(this.op) {
+                case 'abs': return `(Math.abs(${aa})|0)`; case 'sqr': return `Math.imul(${aa}, ${aa})`;
+                case 'cube': return `Math.imul(Math.imul(${aa}, ${aa}), ${aa})`; case 'tri': return `(Math.imul(${aa}, (${aa} + 1|0)) / 2 | 0)`;
+                case 'isqrt': return `(Math.floor(Math.sqrt(Math.abs(${aa})))|0)`; case 'neg': return `(-(${aa})|0)`; case 'is_even': return `((${aa} & 1) === 0 ? 1 : 0)`;
+            }
+        }
+        toReadable() {
+            let aStr = this.a.toReadable();
+            switch(this.op) {
+                case 'abs': return `|${aStr}|`; case 'sqr': return `(${aStr})<sup>2</sup>`; case 'cube': return `(${aStr})<sup>3</sup>`;
+                case 'tri': return `T(${aStr})`; case 'isqrt': return `&lfloor;&radic;|${aStr}|&rfloor;`; case 'neg': return `-(${aStr})`; case 'is_even': return `even(${aStr})`;
+            }
+        }
+        toSerialize() { return `${this.op}(${this.a.toSerialize()})`; } clone() { return new UnOp(this.op, this.a.clone()); }
+        children() { return [this.a]; } setChild(idx, n) { if(idx===0) this.a = n; }
+    }
+
+    class BinOp extends ASTNode {
+        constructor(op, a, b) { super(); this.op = op; this.a = a; this.b = b; }
+        compile(env) {
+            let aa = this.a.compile(env), bb = this.b.compile(env);
+            switch(this.op) {
+                case 'add': return `((${aa} + ${bb})|0)`; case 'sub': return `((${aa} - ${bb})|0)`; case 'mul': return `Math.imul(${aa}, ${bb})`;
+                case 'min': return `(Math.min(${aa}, ${bb})|0)`; case 'max': return `(Math.max(${aa}, ${bb})|0)`; case 'xor': return `(${aa} ^ ${bb})`;
+                case 'and': return `(${aa} & ${bb})`; case 'or':  return `(${aa} | ${bb})`; case 'sdiv': return `(Math.trunc(${aa} / (Math.abs(${bb}) + 1))|0)`;
+                case 'smod': return `(${aa} % (Math.abs(${bb}) + 1)|0)`; case 'shl': return `(${aa} << (${bb} & 31))`; case 'shr': return `(${aa} >> (${bb} & 31))`;
+                case 'eq': return `((${aa} === ${bb}) ? 1 : 0)`; case 'lt': return `((${aa} < ${bb}) ? 1 : 0)`; case 'le': return `((${aa} <= ${bb}) ? 1 : 0)`;
+                case 'gt': return `((${aa} > ${bb}) ? 1 : 0)`; case 'ge': return `((${aa} >= ${bb}) ? 1 : 0)`;
+            }
+        }
+        toReadable() {
+            let aStr = this.a.toReadable(), bStr = this.b.toReadable(), sym = MATH_SYMBOLS[this.op];
+            if(['min','max'].includes(this.op)) return `${sym}(${aStr}, ${bStr})`;
+            if(this.op === 'sdiv') return `&lfloor;${aStr} ${sym} (|${bStr}|+1)&rfloor;`; if(this.op === 'smod') return `(${aStr} ${sym} (|${bStr}|+1))`;
+            if(['shl','shr'].includes(this.op)) return `(${aStr} ${sym} (${bStr} & 31))`; return `(${aStr} ${sym} ${bStr})`;
+        }
+        toSerialize() { return `${this.op}(${this.a.toSerialize()},${this.b.toSerialize()})`; } clone() { return new BinOp(this.op, this.a.clone(), this.b.clone()); }
+        children() { return [this.a, this.b]; } setChild(idx, n) { if(idx===0) this.a=n; else if(idx===1) this.b=n; }
+    }
+
+    class IfElse extends ASTNode {
+        constructor(cond, thn, els) { super(); this.cond = cond; this.thn = thn; this.els = els; }
+        compile(env) { return `((${this.cond.compile(env)} !== 0) ? ${this.thn.compile(env)} : ${this.els.compile(env)})`; }
+        toReadable() { return `[${this.cond.toReadable()} ? ${this.thn.toReadable()} : ${this.els.toReadable()}]`; }
+        toSerialize() { return `ifelse(${this.cond.toSerialize()},${this.thn.toSerialize()},${this.els.toSerialize()})`; }
+        clone() { return new IfElse(this.cond.clone(), this.thn.clone(), this.els.clone()); }
+        children() { return [this.cond, this.thn, this.els]; } setChild(idx, n) { if(idx===0) this.cond=n; else if(idx===1) this.thn=n; else if(idx===2) this.els=n; }
+    }
+
+    function parseSerializedAST(str) {
+        let pos = 0;
+        function consumeSpace() { while(pos < str.length && str[pos] === ' ') pos++; }
+        function consume(expected) { consumeSpace(); if(str.startsWith(expected, pos)) { pos += expected.length; return true; } return false; }
+        function parseNode() {
+            consumeSpace(); if(pos >= str.length) throw new Error("Unexpected EOS.");
+            let m = str.slice(pos).match(/^[a-zA-Z_][a-zA-Z0-9_]*/);
+            if(m) {
+                let id = m[0]; pos += id.length;
+                if(['x','y','z','cx','cy','cz'].includes(id)) return new Var(id);
+                if(consume('(')) {
+                    if(id === 'ifelse') { let cond = parseNode(); consume(','); let thn = parseNode(); consume(','); let els = parseNode(); consume(')'); return new IfElse(cond, thn, els); }
+                    if(['abs','sqr','cube','tri','isqrt','neg','is_even'].includes(id)) { let a = parseNode(); consume(')'); return new UnOp(id, a); }
+                    if(['add','sub','mul','min','max','xor','and','or','sdiv','smod','shl','shr','eq','lt','le','gt','ge'].includes(id)) { let a = parseNode(); consume(','); let b = parseNode(); consume(')'); return new BinOp(id, a, b); }
+                    throw new Error("Unknown token: " + id);
+                }
+                throw new Error("Missing parenthesis at: " + id);
+            }
+            m = str.slice(pos).match(/^-?\d+/);
+            if(m) { pos += m[0].length; return new Const(parseInt(m[0], 10)); }
+            throw new Error(`Syntax fault at ${pos}`);
+        }
+        const tree = parseNode(); consumeSpace(); if(pos < str.length) throw new Error("Trailing characters."); return tree;
+    }
+
+    class ASTFactory {
+        constructor(rng) {
+            this.rng = rng; this.cPool = [0, 1, 2, 3, 4, 5, 8, 10, 15, 16, 31, 32, 63, 64, 127, 128, 255, 256, 1024];
+            this.uOps = [{n:'abs',w:2.2,c:'mix'}, {n:'sqr',w:1.6,c:'grw'}, {n:'cube',w:0.8,c:'grw'}, {n:'tri',w:1.0,c:'grw'}, {n:'isqrt',w:0.8,c:'mix'}, {n:'neg',w:0.4,c:'mix'}, {n:'is_even',w:0.6,c:'log'}];
+            this.bOps = [{n:'add',w:2.2,c:'mix'}, {n:'sub',w:2.0,c:'mix'}, {n:'mul',w:1.4,c:'grw'}, {n:'min',w:0.8,c:'mix'}, {n:'max',w:0.8,c:'mix'}, {n:'sdiv',w:1.0,c:'mix'}, {n:'xor',w:1.8,c:'cge'}, {n:'and',w:1.1,c:'cge'}, {n:'or',w:0.9,c:'cge'}, {n:'smod',w:1.7,c:'cge'}, {n:'shl',w:0.8,c:'cge'}, {n:'shr',w:0.6,c:'cge'}, {n:'eq',w:0.4,c:'log'}, {n:'lt',w:0.3,c:'log'}];
+        }
+        wChoice(ops) { let sum = ops.reduce((s, o) => s + o.w, 0), r = this.rng.next() * sum, acc = 0; for(let o of ops) { acc += o.w; if(r <= acc) return o; } return ops[ops.length-1]; }
+        randConst() { if(this.rng.next() < 0.78) return new Const(this.rng.choice(this.cPool)); let v = Math.floor(this.rng.gauss(0, 64)); if(this.rng.next() < 0.15) v *= this.rng.choice([16, 32, 64, 128]); return new Const(v); }
+        randTerm() { 
+            let r = this.rng.next(); 
+            if(r < 0.20) return new Var('x'); 
+            if(r < 0.40) return new Var('y'); 
+            if(r < 0.60) return new Var('z'); 
+            if(r < 0.70) return new Var('cx'); 
+            if(r < 0.80) return new Var('cy'); 
+            if(r < 0.90) return new Var('cz'); 
+            return this.randConst(); 
+        }
+        randCond(maxD, d) { if(this.rng.next() < 0.65) return new UnOp('is_even', new Var('x')); return new BinOp(this.rng.choice(['eq','lt','le','gt','ge']), this.randTree(maxD, d+1), this.randTree(maxD, d+1)); }
+        grwTree(maxD, d) { if(d >= maxD) return this.randTerm(); let base = this.randTree(maxD, d+1), r = this.rng.next(); if(r<0.35) return new UnOp('sqr', base); if(r<0.55) return new UnOp('tri', base); return new BinOp('mul', base, this.randTree(maxD, d+1)); }
+        randTree(maxD, d=1, forceCge=false) {
+            if(d >= maxD || this.rng.next() < (0.10 + 0.12*d)) return this.randTerm();
+            let node;
+            if(this.rng.next() < 0.12 && d <= maxD - 2) {
+                node = new IfElse(this.randCond(maxD, d+1), this.randTree(maxD, d+1), this.randTree(maxD, d+1));
+                if(forceCge && !this.hasCge(node)) node = new BinOp('xor', node, this.randTree(maxD, d+1)); return node;
+            }
+            if(this.rng.next() < 0.25) node = new UnOp(this.wChoice(this.uOps).n, this.randTree(maxD, d+1));
+            else { let op = this.wChoice(this.bOps); node = new BinOp(op.n, op.c === 'cge' ? this.grwTree(maxD, d+1) : this.randTree(maxD, d+1), this.randTree(maxD, d+1)); }
+            if(forceCge && !this.hasCge(node)) node = new BinOp('smod', node, new BinOp('xor', new Var('x'), new Var('cx'))); return node;
+        }
+        hasCge(node) { let ops = new Set(['xor','and','or','smod','shl','shr']); for(let [p, n] of node.iterPaths()) { if(n instanceof BinOp && ops.has(n.op)) return true; } return false; }
+    }
+
+    function getRandPath(rng, root, inclRoot=true) { let paths = Array.from(root.iterPaths()).map(p => p[0]); if(!inclRoot) paths = paths.filter(p => p.length > 0); return paths.length ? rng.choice(paths) : []; }
+    function limitTree(node, factory) { for(let i=0; i<40; i++) { if(node.depth() <= CFG.MAX_DEPTH && node.size() <= CFG.MAX_NODES) break; let p = getRandPath(factory.rng, node, false); if(p.length===0) break; node = node.replaceAt(p, factory.randTerm()); } return node; }
+    function mutateSub(node, factory) { return limitTree(node.replaceAt(getRandPath(factory.rng, node, false), factory.randTree(CFG.MAX_DEPTH, 1)), factory); }
+    function mutatePoint(node, factory) {
+        let [p, nn] = factory.rng.choice(Array.from(node.iterPaths())); nn = nn.clone();
+        if(nn instanceof UnOp) nn.op = factory.wChoice(factory.uOps).n; else if(nn instanceof BinOp) nn.op = factory.wChoice(factory.bOps).n; else if(nn instanceof IfElse) nn.cond = factory.randCond(CFG.MAX_DEPTH, 1);
+        return limitTree(node.replaceAt(p, nn), factory);
+    }
+    function mutateConst(node, factory) {
+        let cPaths = Array.from(node.iterPaths()).filter(x => x[1] instanceof Const);
+        if(!cPaths.length) return limitTree(node.replaceAt(getRandPath(factory.rng, node, false), factory.randConst()), factory);
+        let [p, c] = factory.rng.choice(cPaths), v = c.v, r = factory.rng.next();
+        if(r < 0.45) v += Math.floor(factory.rng.gauss(0, 8)); else if(r < 0.70) v *= factory.rng.choice([2, -1, 3, 4, 5]); else v ^= (1 << factory.rng.randint(0, 10));
+        return limitTree(node.replaceAt(p, new Const(v)), factory);
+    }
+    function crossover(a, b, factory) {
+        let pa = getRandPath(factory.rng, a, false), pb = getRandPath(factory.rng, b, false); if(!pa.length || !pb.length) return [a, b];
+        return [limitTree(a.replaceAt(pa, b.getAt(pb).clone()), factory), limitTree(b.replaceAt(pb, a.getAt(pa).clone()), factory)];
+    }
+
+    class Individual {
+        constructor(trees) {
+            this.trees = trees; 
+            this.shareId = btoa(trees[0].toSerialize() + ';' + trees[1].toSerialize() + ';' + trees[2].toSerialize());
+            this.readableMath = `
+                <div><strong>X<sub>n+1</sub></strong> = ${trees[0].toReadable()}</div>
+                <div><strong>Y<sub>n+1</sub></strong> = ${trees[1].toReadable()}</div>
+                <div><strong>Z<sub>n+1</sub></strong> = ${trees[2].toReadable()}</div>
+            `; 
+            this.hash = hashAST(this.shareId); this.fitness = null; this.fn = null;
+        }
+        
+        compilePixelLoop() {
+            if(!this.fn) {
+                let env = { x: 'curX', y: 'curY', z: 'curZ', cx: '(cx|0)', cy: '(cy|0)', cz: '(cz|0)' };
+                let cX = this.trees[0].compile(env);
+                let cY = this.trees[1].compile(env);
+                let cZ = this.trees[2].compile(env);
+                
+                let code = `
+                    let curX = cx | 0, curY = cy | 0, curZ = cz | 0;
+                    for(let i=0; i<maxIter; i++) {
+                        let nx = (${cX}) | 0;
+                        let ny = (${cY}) | 0;
+                        let nz = (${cZ}) | 0;
+                        curX = nx; curY = ny; curZ = nz;
+                        let dx = Number(curX), dy = Number(curY), dz = Number(curZ);
+                        if(dx*dx + dy*dy + dz*dz > r2) return i;
+                    }
+                    return maxIter;
+                `;
+                this.fn = new Function('cx', 'cy', 'cz', 'maxIter', 'r2', code);
+            }
+            return this.fn;
+        }
+    }
+
+    function getCartesianOffsets(mode, cx, cy, gridSize) {
+        let half = Math.floor(gridSize / 2);
+        if (mode === 'customCenter') return { offsetX: cx - half, offsetY: cy - half };
+        return { offsetX: -half, offsetY: -half };
+    }
+
+    function evaluateFitness(ind, gridSize, mode, cx, cy) {
+        let fn = ind.compilePixelLoop(), maxIter = CFG.MAX_ITER, r2 = CFG.ESC_RAD_SQ, escCount = 0, sum = 0, sumSq = 0, n = 0;
+        let step = Math.max(2, Math.floor(gridSize / 8)); 
+        let { offsetX, offsetY } = getCartesianOffsets(mode, cx, cy, gridSize);
+        let offsetZ = -Math.floor(gridSize / 2);
+
+        for(let z = 0; z < gridSize; z += step) {
+            let cz = offsetZ + z;
+            for(let y = 0; y < gridSize; y += step) {
+                if(isStopped) return;
+                let cyPos = offsetY + (gridSize - 1 - y);
+                for(let x = 0; x < gridSize; x += step) {
+                    let cxPos = offsetX + x;
+                    let iters = fn(cxPos, cyPos, cz, maxIter, r2);
+                    if (iters < maxIter) escCount++;
+                    sum += iters; sumSq += (iters * iters); n++;
+                }
+            }
+        }
+        let mean = sum / n, variance = (sumSq / n) - (mean * mean), std = variance > 0 ? Math.sqrt(variance) : 0, escFrac = escCount / n;
+        if(std < CFG.STD_MIN) ind.fitness = -1e12 + std; else if(escFrac < CFG.ESC_MIN || escFrac > CFG.ESC_MAX) ind.fitness = -1e9 + std; else ind.fitness = std;
+    }
+
+    function generatePalette(seedStr) {
+        let rng = new PRNG(seedStr);
+        return { fr: rng.gauss(1.5, 0.5), fg: rng.gauss(1.5, 0.5), fb: rng.gauss(1.5, 0.5), pr: rng.next(), pg: rng.next(), pb: rng.next(), ir: rng.randint(0,20), ig: rng.randint(0,20), ib: rng.randint(0,25) };
+    }
+
+    function renderVolume(ind, gridSize, totalSlices, mode, cx, cy) {
+        let fn = ind.compilePixelLoop(), frames = [], pal = generatePalette(ind.hash), r2 = CFG.ESC_RAD_SQ;
+        let { offsetX, offsetY } = getCartesianOffsets(mode, cx, cy, gridSize);
+        let offsetZ = -Math.floor(gridSize / 2);
+
+        let rgbMap = new Uint32Array(CFG.MAX_ITER + 1);
+        for(let i=0; i<CFG.MAX_ITER; i++) {
+            let t = Math.pow(i / CFG.MAX_ITER, 0.75), tp = 2.0 * Math.PI;
+            let r = Math.floor((0.5 + 0.5 * Math.sin(tp * (t * pal.fr + pal.pr))) * 255);
+            let g = Math.floor((0.5 + 0.5 * Math.sin(tp * (t * pal.fg + pal.pg))) * 255);
+            let b = Math.floor((0.5 + 0.5 * Math.sin(tp * (t * pal.fb + pal.pb))) * 255);
+            rgbMap[i] = (255 << 24) | (b << 16) | (g << 8) | r;
+        }
+        rgbMap[CFG.MAX_ITER] = (255 << 24) | (pal.ib << 16) | (pal.ig << 8) | pal.ir;
+
+        let nPx = gridSize * gridSize, sumR = 0, sumG = 0, sumB = 0;
+        let zStep = gridSize / totalSlices;
+
+        for(let zIdx = 0; zIdx < totalSlices; zIdx++) {
+            if(isStopped) return null;
+            let buffer = new ArrayBuffer(nPx * 4), view = new Uint32Array(buffer);
+            let cz = offsetZ + Math.floor(zIdx * zStep), pixelIdx = 0;
+            
+            for(let y = 0; y < gridSize; y++) {
+                let cyPos = offsetY + (gridSize - 1 - y);
+                for(let x = 0; x < gridSize; x++) {
+                    let cxPos = offsetX + x;
+                    let iter = fn(cxPos, cyPos, cz, CFG.MAX_ITER, r2);
+                    let col = rgbMap[iter]; view[pixelIdx++] = col; sumR += (col & 0xFF); sumG += ((col >> 8) & 0xFF); sumB += ((col >> 16) & 0xFF);
+                }
+            }
+            frames.push(buffer); sendProgress((zIdx + 1) / totalSlices);
+        }
+
+        let totalPx = nPx * totalSlices; let meanR = sumR/totalPx, meanG = sumG/totalPx, meanB = sumB/totalPx, varR=0, varG=0, varB=0;
+        for(let f of frames) {
+            let view = new Uint32Array(f);
+            for(let i=0; i<nPx; i++) { let col = view[i], dr = (col & 0xFF) - meanR, dg = ((col >> 8) & 0xFF) - meanG, db = ((col >> 16) & 0xFF) - meanB; varR += dr*dr; varG += dg*dg; varB += db*db; }
+        }
+        return { frames, dev: Math.sqrt((varR + varG + varB) / (3 * totalPx)) };
+    }
+
+    self.onmessage = function(e) {
+        if(e.data.cmd === 'start_evolution') { isStopped = false; runEvolution(e.data.config).catch(err => { if(!isStopped) sendLog(err.toString(), 'err'); }); }
+        else if(e.data.cmd === 'render_custom') { isStopped = false; runCustomRender(e.data.payload).catch(err => { if(!isStopped) sendLog(err.toString(), 'err'); }); }
+    };
+
+    async function runCustomRender(payload) {
+        const { shareIdBase64, gridSize, renderScale, slices, coordMode, coordX, coordY } = payload;
+        sendLog(`Deserializing 3-Axis Vector Field...`);
+        let astStr; try { astStr = atob(shareIdBase64); } catch(e) { throw new Error("Base64 ID Decoding failure."); }
+        
+        let parts = astStr.split(';');
+        if(parts.length !== 3) throw new Error("Invalid Syntax. Require 3 expressions separated by semicolons.");
+        
+        let trees = [parseSerializedAST(parts[0]), parseSerializedAST(parts[1]), parseSerializedAST(parts[2])];
+        let ind = new Individual(trees);
+        
+        sendLog(`Evaluating Vector Field...`);
+        let res = renderVolume(ind, gridSize, slices, coordMode, coordX, coordY); if(!res || isStopped) return;
+        postMessage({ type: 'custom_result', id: ind.hash, shareId: ind.shareId, readableMath: ind.readableMath, fitness: 0, w: gridSize, h: gridSize, renderScale, frames: res.frames }, res.frames);
+    }
+
+    async function runEvolution(config) {
+        let rng = new PRNG(config.seedStr), factory = new ASTFactory(rng), pop = [], seen = new Set();
+        const { coordMode, coordX, coordY, slices, renderScale } = config;
+        sendLog(`Initializing Vector Field Population (${config.popSize})...`);
+        
+        let x = new Var('x'), y = new Var('y'), z = new Var('z'), cx = new Var('cx'), cy = new Var('cy'), cz = new Var('cz');
+        let seeds = [
+            [
+                new BinOp('add', new BinOp('sub', new UnOp('sqr', x), new UnOp('sqr', y)), cx),
+                new BinOp('add', new BinOp('mul', new BinOp('mul', new Const(2), x), y), cy),
+                new BinOp('add', new BinOp('sub', z, x), cz)
+            ],
+            [
+                new BinOp('smod', new BinOp('add', new BinOp('xor', y, z), cx), new Const(256)),
+                new BinOp('smod', new BinOp('add', new BinOp('xor', z, x), cy), new Const(256)),
+                new BinOp('smod', new BinOp('add', new BinOp('xor', x, y), cz), new Const(256))
+            ]
+        ];
+        
+        for(let s of seeds) { let ind = new Individual(s); seen.add(ind.hash); pop.push(ind); }
+        while(pop.length < config.popSize && !isStopped) {
+            let trees = [factory.randTree(CFG.MAX_DEPTH, 1, true), factory.randTree(CFG.MAX_DEPTH, 1, true), factory.randTree(CFG.MAX_DEPTH, 1, true)];
+            let ind = new Individual(trees);
+            if(!seen.has(ind.hash)) { seen.add(ind.hash); pop.push(ind); }
+        }
+
+        for(let gen=0; gen < config.generations; gen++) {
+            if(isStopped) break; sendLog(`[Gen ${gen+1}/${config.generations}] Evaluating Subspace...`);
+            for(let i=0; i<pop.length; i++) { if(isStopped) break; if(pop[i].fitness === null) { try { evaluateFitness(pop[i], CFG.FITNESS_GRID, coordMode, coordX, coordY); } catch(e) { pop[i].fitness = -1e12; } } }
+            pop.sort((a,b) => b.fitness - a.fitness);
+            sendLog(`Best Fitness: ${pop[0].fitness.toFixed(2)} | Rule ID: ${pop[0].hash}`); sendProgress((gen+1)/config.generations);
+            
+            if(gen < config.generations - 1) {
+                let nPop = []; let eliteC = Math.max(1, Math.floor(config.popSize * CFG.ELITE_FRAC));
+                for(let i=0; i<eliteC; i++) nPop.push(new Individual([pop[i].trees[0].clone(), pop[i].trees[1].clone(), pop[i].trees[2].clone()]));
+                while(nPop.length < config.popSize && !isStopped) {
+                    let p1 = rng.choice(pop.slice(0, CFG.TOURNAMENT_K)), p2 = rng.choice(pop.slice(0, CFG.TOURNAMENT_K));
+                    let c1 = [p1.trees[0].clone(), p1.trees[1].clone(), p1.trees[2].clone()];
+                    let c2 = [p2.trees[0].clone(), p2.trees[1].clone(), p2.trees[2].clone()];
+                    
+                    if(rng.next() < CFG.CROSSOVER_RATE) {
+                        let axis = rng.choice([0,1,2]);
+                        let crossed = crossover(c1[axis], c2[axis], factory);
+                        c1[axis] = crossed[0]; c2[axis] = crossed[1];
+                    }
+                    
+                    for(let t of [c1, c2]) {
+                        if(nPop.length >= config.popSize) break;
+                        let axis = rng.choice([0,1,2]);
+                        if(rng.next() < CFG.SUBTREE_MUT_RATE) t[axis] = mutateSub(t[axis], factory);
+                        if(rng.next() < CFG.POINT_MUT_RATE) t[axis] = mutatePoint(t[axis], factory);
+                        if(rng.next() < CFG.CONST_MUT_RATE) t[axis] = mutateConst(t[axis], factory);
+                        
+                        let ind = new Individual(t); if(!seen.has(ind.hash)) { seen.add(ind.hash); nPop.push(ind); }
+                    }
+                }
+                pop = nPop;
+            }
+        }
+        if(isStopped) return;
+        pop.sort((a,b) => b.fitness - a.fitness); sendLog(`Evolution complete. Rendering top ${config.topN} Attractors...`);
+        let renderedCount = 0;
+        for(let i=0; i<pop.length; i++) {
+            if(isStopped || renderedCount >= config.topN) break;
+            let ind = pop[i]; sendLog(`Rendering Rank ${i+1} [Hash: ${ind.hash}]...`);
+            try {
+                let res = renderVolume(ind, config.gridSize, slices, coordMode, coordX, coordY); if(!res || isStopped) continue;
+                if(res.dev < 15.0) { sendLog(`Rule ${ind.hash} rejected (Monochrome)`); continue; }
+                postMessage({ type: 'result', id: ind.hash, shareId: ind.shareId, readableMath: ind.readableMath, fitness: ind.fitness, w: config.gridSize, h: config.gridSize, renderScale, frames: res.frames }, res.frames);
+                renderedCount++; sendLog(`Vector Field synthesized.`, 'win');
+            } catch(e) { sendLog(`Render fault: ${e.message}`, 'err'); }
+        }
+        postMessage({ type: 'done', count: renderedCount });
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => { window.app = new MainApp(); });
+</script>
+
+</body>
+</html>
